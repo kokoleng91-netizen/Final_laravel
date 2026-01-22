@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
@@ -34,26 +35,45 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        $fields = $request->validate([
-            'product_name' => 'required|string|max:255',
-            'description'  => 'nullable|string',
-            'price'        => 'required|numeric',
-            'quantity'     => 'required|integer',
-            'category_id'  => 'required|exists:categories,id',
-            'image'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048', // កំណត់ទំហំរូបភាព
-        ]);
+        try {
+            // 1. Validation
+            $fields = $request->validate([
+                'product_name' => 'required|string|max:255',
+                'description'  => 'nullable|string',
+                'price'        => 'required|numeric',
+                'quantity'     => 'required|integer',
+                'category_id'  => 'required|exists:categories,id',
+                'image'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            ]);
 
-        // Logic សម្រាប់បង្ហោះរូបភាព
-        if ($request->hasFile('image')) {
-            $fields['image'] = $request->file('image')->store('products', 'public');
+            // 2. Handle Image Upload
+            if ($request->hasFile('image')) {
+                $fields['image'] = $request->file('image')->store('products', 'public');
+            }
+
+            // 3. Create Product
+            $product = Product::create($fields);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Product created successfully',
+                'data'    => $product
+            ], 201);
+        } catch (\Throwable $th) {
+            // Cleanup: Delete uploaded image if database insert fails
+            if (isset($fields['image']) && Storage::disk('public')->exists($fields['image'])) {
+                Storage::disk('public')->delete($fields['image']);
+            }
+
+            // Log the error for debugging
+            Log::error("Product Store Error: " . $th->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create product',
+                'error'   => $th->getMessage()
+            ], 500);
         }
-
-        $product = Product::create($fields);
-
-        return response()->json([
-            'message' => 'ផលិតផលត្រូវបានបង្កើតដោយជោគជ័យ',
-            'product' => $product
-        ], 201);
     }
 
     /**
@@ -61,13 +81,33 @@ class ProductController extends Controller
      */
     public function show($id)
     {
-        $product = Product::with('category')->find($id);
+        try {
+            // Find product with its category
+            $product = Product::with('category')->find($id);
 
-        if (!$product) {
-            return response()->json(['message' => 'រកមិនឃើញផលិតផលនេះទេ'], 404);
+            // Check if product exists
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product not found'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Product retrieved successfully',
+                'data'    => $product
+            ], 200);
+        } catch (\Throwable $th) {
+            // Log error for internal debugging
+            Log::error("Product Show Error: " . $th->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while fetching product details',
+                'error'   => $th->getMessage()
+            ], 500);
         }
-
-        return response()->json($product, 200);
     }
 
     /**
@@ -75,34 +115,54 @@ class ProductController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $product = Product::find($id);
+        try {
+            $product = Product::find($id);
 
-        if (!$product) {
-            return response()->json(['message' => 'រកមិនឃើញផលិតផលដើម្បីកែប្រែ'], 404);
-        }
-
-        $fields = $request->validate([
-            'product_name' => 'string|max:255',
-            'price'        => 'numeric',
-            'quantity'     => 'integer',
-            'category_id'  => 'exists:categories,id',
-            'image'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
-        ]);
-
-        // ប្រសិនបើមានការប្តូររូបភាពថ្មី ត្រូវលុបរូបភាពចាស់ចោល
-        if ($request->hasFile('image')) {
-            if ($product->image) {
-                Storage::disk('public')->delete($product->image);
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product not found for update'
+                ], 404);
             }
-            $fields['image'] = $request->file('image')->store('products', 'public');
+
+            $fields = $request->validate([
+                'product_name' => 'string|max:255',
+                'description'  => 'nullable|string',
+                'price'        => 'numeric',
+                'quantity'     => 'integer',
+                'category_id'  => 'exists:categories,id',
+                'image'        => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
+            ]);
+
+            // Logic for handling image update
+            if ($request->hasFile('image')) {
+                // 1. Delete the old image from storage if it exists
+                if ($product->image && Storage::disk('public')->exists($product->image)) {
+                    Storage::disk('public')->delete($product->image);
+                }
+
+                // 2. Store the new image
+                $fields['image'] = $request->file('image')->store('products', 'public');
+            }
+
+            // 3. Update the database
+            $product->update($fields);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Product updated successfully',
+                'data'    => $product
+            ], 200);
+        } catch (\Throwable $th) {
+            // Log the error
+            Log::error("Product Update Error: " . $th->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update product',
+                'error'   => $th->getMessage()
+            ], 500);
         }
-
-        $product->update($fields);
-
-        return response()->json([
-            'message' => 'បានកែប្រែព័ត៌មានដោយជោគជ័យ',
-            'product' => $product
-        ], 200);
     }
 
     /**
@@ -110,19 +170,37 @@ class ProductController extends Controller
      */
     public function destroy($id)
     {
-        $product = Product::find($id);
+        try {
+            $product = Product::find($id);
 
-        if (!$product) {
-            return response()->json(['message' => 'មិនអាចលុបបានទេ ព្រោះរកមិនឃើញផលិតផល'], 404);
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product not found. Deletion failed.'
+                ], 404);
+            }
+
+            // 1. Delete the image from Storage if it exists
+            if ($product->image && Storage::disk('public')->exists($product->image)) {
+                Storage::disk('public')->delete($product->image);
+            }
+
+            // 2. Delete the record from Database
+            $product->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Product deleted successfully'
+            ], 200);
+        } catch (\Throwable $th) {
+            // Log the error for internal tracking
+            Log::error("Product Delete Error: " . $th->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'An error occurred while trying to delete the product',
+                'error'   => $th->getMessage()
+            ], 500);
         }
-
-        // លុបរូបភាពចេញពី Storage មុននឹងលុបចេញពី Database
-        if ($product->image) {
-            Storage::disk('public')->delete($product->image);
-        }
-
-        $product->delete();
-
-        return response()->json(['message' => 'លុបផលិតផលរួចរាល់'], 200);
     }
 }
