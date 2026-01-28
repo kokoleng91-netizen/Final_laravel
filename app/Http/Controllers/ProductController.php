@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
@@ -33,30 +34,24 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        try {
-            $fields = $request->validate([
-                'product_name' => 'required|string|max:255',
-                'price'        => 'required|numeric',
-                'stock_qty'    => 'required|integer',
-                'category_id'  => 'required|exists:categories,id',
-            ]);
+        $fields = $request->validate([
+            'product_name' => 'required|string|max:255',
+            'price'        => 'required|numeric',
+            'stock_qty'    => 'required|integer',
+            'category_id'  => 'required|exists:categories,id',
+            'image'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+        ]);
 
-            $product = Product::create($fields);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Product created successfully',
-                'data' => $product
-            ], 201);
-        } catch (\Throwable $th) {
-            Log::error($th->getMessage());
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create product'
-            ], 500);
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('products', 'public');
+            $fields['image'] = $path; // ✅ store path only
         }
+
+        $product = Product::create($fields);
+
+        return response()->json(['data' => $product], 201);
     }
+
 
     /**
      * Show single product
@@ -105,7 +100,19 @@ class ProductController extends Controller
                 'price'        => 'numeric',
                 'stock_qty'    => 'integer',
                 'category_id'  => 'exists:categories,id',
+                'image'        => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             ]);
+
+            // Handle image upload
+            if ($request->hasFile('image')) {
+                // Delete old image if exists
+                if ($product->image && Storage::disk('public')->exists($product->image)) {
+                    Storage::disk('public')->delete($product->image);
+                }
+
+                $path = $request->file('image')->store('products', 'public');
+                $fields['image'] = $path;
+            }
 
             $product->update($fields);
 

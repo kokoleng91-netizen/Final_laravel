@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Categories;
+use App\Models\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Exception;
@@ -15,7 +16,7 @@ class CategoriesController extends Controller
     public function index()
     {
         try {
-            $categories = Categories::all();
+            $categories = Category::all();
 
             return response()->json($categories, 200);
         } catch (Exception $e) {
@@ -38,7 +39,7 @@ class CategoriesController extends Controller
                 'description'   => 'nullable|string',
             ]);
 
-            $category = Categories::create($fields);
+            $category = Category::create($fields);
 
             return response()->json([
                 'message'  => 'Category created successfully',
@@ -59,7 +60,7 @@ class CategoriesController extends Controller
     public function show($id)
     {
         try {
-            $category = Categories::with('products')->find($id);
+            $category = Category::with('products')->find($id);
 
             if (!$category) {
                 return response()->json([
@@ -83,7 +84,7 @@ class CategoriesController extends Controller
     public function update(Request $request, $id)
     {
         try {
-            $category = Categories::find($id);
+            $category = Category::find($id);
 
             if (!$category) {
                 return response()->json([
@@ -117,7 +118,7 @@ class CategoriesController extends Controller
     public function destroy($id)
     {
         try {
-            $category = Categories::find($id);
+            $category = Category::find($id);
 
             if (!$category) {
                 return response()->json([

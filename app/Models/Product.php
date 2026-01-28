@@ -12,10 +12,21 @@ class Product extends Model
         'price',
         'stock_qty',
         'category_id',
+        'image'
     ];
 
     public function category()
     {
-        return $this->belongsTo(Categories::class);
+        return $this->belongsTo(Category::class);
+    }
+
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    public function getImageAttribute($value)
+    {
+        return $value ? asset('storage/' . $value) : null;
     }
 }

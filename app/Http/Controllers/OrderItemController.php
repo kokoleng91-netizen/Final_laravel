@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Order_item;
+use App\Models\OrderItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -14,7 +14,7 @@ class OrderItemController extends Controller
     public function index()
     {
         try {
-            $items = Order_item::with(['product', 'order.user'])
+            $items = OrderItem::with(['product', 'order.user'])
                 ->latest()
                 ->get();
 
@@ -41,7 +41,7 @@ class OrderItemController extends Controller
                 'unit_price'  => 'required|numeric|min:0',
             ]);
 
-            $orderItem = Order_item::create($fields);
+            $orderItem = OrderItem::create($fields);
 
             return response()->json([
                 'message' => 'បានបន្ថែមមុខទំនិញទៅក្នុង Order រួចរាល់',
@@ -62,7 +62,7 @@ class OrderItemController extends Controller
     public function show($id)
     {
         try {
-            $orderItem = Order_item::with(['product', 'order'])
+            $orderItem = OrderItem::with(['product', 'order'])
                 ->find($id);
 
             if (!$orderItem) {
@@ -87,7 +87,7 @@ class OrderItemController extends Controller
     public function update(Request $request, $id)
     {
         try {
-            $orderItem = Order_item::find($id);
+            $orderItem = OrderItem::find($id);
 
             if (!$orderItem) {
                 return response()->json([
@@ -121,7 +121,7 @@ class OrderItemController extends Controller
     public function destroy($id)
     {
         try {
-            $orderItem = Order_item::find($id);
+            $orderItem = OrderItem::find($id);
 
             if (!$orderItem) {
                 return response()->json([

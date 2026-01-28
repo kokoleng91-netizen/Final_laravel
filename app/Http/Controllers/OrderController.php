@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Models\User;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Laravel\Sanctum\HasApiTokens;
+
 
 class OrderController extends Controller
 {
@@ -16,6 +19,7 @@ class OrderController extends Controller
      * - Admin: can see all orders
      * - User: can see only their own orders
      */
+
     public function index()
     {
         try {
@@ -53,57 +57,46 @@ class OrderController extends Controller
             'items.*.stock_qty' => 'required|integer|min:1',
         ]);
 
-        try {
-            return DB::transaction(function () use ($request) {
-                $totalAmount = 0;
-                $orderItemsData = [];
+        return DB::transaction(function () use ($request) {
 
-                foreach ($request->items as $item) {
-                    // Access column 'id' និង 'stock_qty'
-                    $product = Product::lockForUpdate()->find($item['id']);
+            $totalAmount = 0;
+            $orderItemsData = [];
 
-                    if (!$product || $product->stock_qty < $item['stock_qty']) {
-                        throw new \Exception(
-                            'Insufficient stock for product: ' . ($product->product_name ?? '')
-                        );
-                    }
+            foreach ($request->items as $item) {
+                $product = Product::lockForUpdate()->find($item['id']);
 
-                    $totalAmount += $product->price * $item['stock_qty'];
-
-                    $orderItemsData[] = [
-                        'product_id' => $product->id,
-                        'quantity'   => $item['stock_qty'],
-                        'unit_price' => $product->price,
-                    ];
-
-                    // Reduce product stock
-                    $product->decrement('stock_qty', $item['stock_qty']);
+                if (!$product || $product->stock_qty < $item['stock_qty']) {
+                    throw new \Exception('Insufficient stock for ' . $product->product_name);
                 }
 
-                // Create order
-                $order = Order::create([
-                    'user_id'      => Auth::id(),
-                    'total_amount' => $totalAmount,
-                    'status'       => 'pending'
-                ]);
+                $totalAmount += $product->price * $item['stock_qty'];
 
-                // Create order items
-                foreach ($orderItemsData as $itemData) {
-                    $order->orderItems()->create($itemData);
-                }
+                $orderItemsData[] = [
+                    'product_id'    => $product->id,
+                    'product_name'  => $product->product_name,  // snapshot
+                    'product_image' => $product->image,         // snapshot
+                    'quantity'      => $item['stock_qty'],
+                    'unit_price'    => $product->price,
+                ];
 
-                return response()->json([
-                    'message' => 'Order placed successfully',
-                    'order'   => $order->load(['orderItems.product'])
-                ], 201);
-            });
-        } catch (\Exception $e) {
-            Log::error('Order store error: ' . $e->getMessage());
+                $product->decrement('stock_qty', $item['stock_qty']);
+            }
+
+            $order = Order::create([
+                'user_id' => Auth::id(),
+                'total_amount' => $totalAmount,
+                'status' => 'pending'
+            ]);
+
+            foreach ($orderItemsData as $itemData) {
+                $order->orderItems()->create($itemData);
+            }
 
             return response()->json([
-                'message' => $e->getMessage()
-            ], 400);
-        }
+                'message' => 'Order placed successfully',
+                'order'   => $order->load('orderItems') // no live product
+            ], 201);
+        });
     }
 
 
@@ -139,38 +132,45 @@ class OrderController extends Controller
     }
 
     /**
+     * Display all orders (Admin only)
+     */
+    public function adminIndex()
+    {
+        try {
+            $orders = Order::with(['user', 'orderItems.product'])
+                ->latest()
+                ->get();
+
+            return response()->json($orders, 200);
+        } catch (\Exception $e) {
+            Log::error('Admin order index error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to retrieve orders'
+            ], 500);
+        }
+    }
+
+    /**
      * Update order status (Admin only)
      */
     public function update(Request $request, $id)
     {
-        try {
-            $order = Order::find($id);
+        $user = request()->user();
 
-            if (!$order) {
-                return response()->json([
-                    'message' => 'Order not found'
-                ], 404);
-            }
-
-            $request->validate([
-                'status' => 'required|in:pending,processing,completed,cancelled'
-            ]);
-
-            $order->update([
-                'status' => $request->status
-            ]);
-
-            return response()->json([
-                'message' => 'Order status updated successfully',
-                'order'   => $order
-            ], 200);
-        } catch (\Exception $e) {
-            Log::error('Order update error: ' . $e->getMessage());
-
-            return response()->json([
-                'message' => 'Failed to update order status'
-            ], 500);
+        if (!$user || !$user->isAdmin()) {
+            return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $order = Order::findOrFail($id);
+
+        $request->validate([
+            'status' => 'required|in:pending,processing,completed,cancelled'
+        ]);
+
+        $order->update(['status' => $request->status]);
+
+        return response()->json(['message' => 'Order updated', 'order' => $order]);
     }
 
     /**
@@ -178,26 +178,9 @@ class OrderController extends Controller
      */
     public function destroy($id)
     {
-        try {
-            $order = Order::find($id);
+        $order = Order::findOrFail($id);
+        $order->update(['status' => 'cancelled']);
 
-            if (!$order) {
-                return response()->json([
-                    'message' => 'Order not found'
-                ], 404);
-            }
-
-            $order->delete();
-
-            return response()->json([
-                'message' => 'Order deleted successfully'
-            ], 200);
-        } catch (\Exception $e) {
-            Log::error('Order delete error: ' . $e->getMessage());
-
-            return response()->json([
-                'message' => 'Failed to delete order'
-            ], 500);
-        }
+        return response()->json(['message' => 'Order cancelled']);
     }
 }
