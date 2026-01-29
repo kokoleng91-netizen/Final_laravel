@@ -9,6 +9,15 @@ use App\Http\Controllers\OrderItemController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\UserController;
 
+Route::get('/test-db', function () {
+    try {
+        DB::connection()->getPdo();
+        return "Database connected successfully!";
+    } catch (\Exception $e) {
+        return "Database connection failed: " . $e->getMessage();
+    }
+});
+
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 
